@@ -1,0 +1,27 @@
+name: Deploy TEST
+
+on:
+  push:
+    branches: [ test ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Deploy to TEST server
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.TEST_HOST }}
+        username: ${{ secrets.TEST_USERNAME }}
+        key: ${{ secrets.TEST_SSH_KEY }}
+        script: |
+          cd ~
+          rm -rf growthguide || true
+          git clone https://github.com/santoshsaha84/AI_SoftwareDevelopment.git growthguide
+          cd growthguide/deploy
+          export DB_PASSWORD=${{ secrets.TEST_DB_PASSWORD }}
+          docker-compose -f docker-compose.test.yml down
+          docker-compose -f docker-compose.test.yml up -d --build

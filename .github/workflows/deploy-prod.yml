@@ -1,0 +1,27 @@
+name: Deploy PROD
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Deploy to PROD server
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.PROD_HOST }}
+        username: ${{ secrets.PROD_USERNAME }}
+        key: ${{ secrets.PROD_SSH_KEY }}
+        script: |
+          cd ~
+          rm -rf growthguide || true
+          git clone https://github.com/santoshsaha84/AI_SoftwareDevelopment.git growthguide
+          cd growthguide/deploy
+          export DB_PASSWORD=${{ secrets.PROD_DB_PASSWORD }}
+          docker-compose -f docker-compose.prod.yml down
+          docker-compose -f docker-compose.prod.yml up -d --build
