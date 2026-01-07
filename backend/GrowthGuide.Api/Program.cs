@@ -18,8 +18,35 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddScoped<IAIGrowingService, MockAIService>();
 
+var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL");
+
+if (!string.IsNullOrEmpty(connectionString))
+{
+    Console.WriteLine("Using DATABASE_URL from environment.");
+    if (connectionString.StartsWith("postgres://") || connectionString.StartsWith("postgresql://"))
+    {
+        var uri = new Uri(connectionString);
+        var userInfo = uri.UserInfo.Split(':');
+        connectionString = $"Host={uri.Host};Database={uri.AbsolutePath.TrimStart('/')};Username={userInfo[0]};Password={userInfo[1]};Port={uri.Port};SSL Mode=Require;Trust Server Certificate=true;";
+    }
+}
+else
+{
+    connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
+                    ?? builder.Configuration.GetConnectionString("Default") // Fallback for guideline consistency
+                    ?? Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection")
+                    ?? Environment.GetEnvironmentVariable("ConnectionStrings__Default");
+    
+    Console.WriteLine($"Using connection string from config folder/variables. Host check: {connectionString?.Contains("Host=")}");
+}
+
+if (string.IsNullOrEmpty(connectionString))
+{
+    throw new InvalidOperationException("Database connection string is not configured. Please set DATABASE_URL or ConnectionStrings__DefaultConnection.");
+}
+
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(connectionString));
 
 builder.Services.AddAuthorization();
 builder.Services.AddIdentityApiEndpoints<ApplicationUser>()
@@ -41,13 +68,22 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.MapGroup("/api/auth").MapIdentityApi<ApplicationUser>();
 app.MapControllers();
+
+app.MapFallbackToFile("index.html");
 
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
     var context = services.GetRequiredService<AppDbContext>();
+    
+    // Ensure database is migrated
+    await context.Database.MigrateAsync();
+
     await DbInitializer.Initialize(context);
 }
 
