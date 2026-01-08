@@ -18,13 +18,14 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddScoped<IAIGrowingService, MockAIService>();
 
-var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL");
+var connectionString = builder.Configuration["DATABASE_URL"];
 
 if (!string.IsNullOrEmpty(connectionString))
 {
-    Console.WriteLine("Using DATABASE_URL from environment.");
+    Console.WriteLine("--> Found DATABASE_URL in configuration.");
     if (connectionString.StartsWith("postgres://") || connectionString.StartsWith("postgresql://"))
     {
+        Console.WriteLine("--> Parsing PostgreSQL URI...");
         var uri = new Uri(connectionString);
         var userInfo = uri.UserInfo.Split(':');
         connectionString = $"Host={uri.Host};Database={uri.AbsolutePath.TrimStart('/')};Username={userInfo[0]};Password={userInfo[1]};Port={uri.Port};SSL Mode=Require;Trust Server Certificate=true;";
@@ -32,17 +33,32 @@ if (!string.IsNullOrEmpty(connectionString))
 }
 else
 {
+    Console.WriteLine("--> DATABASE_URL not found. Checking ConnectionStrings...");
     connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
-                    ?? builder.Configuration.GetConnectionString("Default") // Fallback for guideline consistency
-                    ?? Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection")
-                    ?? Environment.GetEnvironmentVariable("ConnectionStrings__Default");
+                    ?? builder.Configuration.GetConnectionString("Default");
     
-    Console.WriteLine($"Using connection string from config folder/variables. Host check: {connectionString?.Contains("Host=")}");
+    if (string.IsNullOrEmpty(connectionString))
+    {
+        Console.WriteLine("--> No connection strings found in config. Checking Environment Variables directly...");
+        connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection")
+                        ?? Environment.GetEnvironmentVariable("ConnectionStrings__Default");
+    }
 }
 
 if (string.IsNullOrEmpty(connectionString))
 {
+    Console.WriteLine("CRITICAL: No database connection string found anywhere!");
     throw new InvalidOperationException("Database connection string is not configured. Please set DATABASE_URL or ConnectionStrings__DefaultConnection.");
+}
+
+Console.WriteLine($"--> Final Connection String Host: {new Npgsql.NpgsqlConnectionStringBuilder(connectionString).Host}");
+
+if (connectionString.Contains("localhost") || connectionString.Contains("127.0.0.1"))
+{
+    if (builder.Environment.IsProduction() || builder.Environment.IsStaging())
+    {
+        Console.WriteLine("WARNING: Localhost detected in Production/Staging environment! This will likely fail.");
+    }
 }
 
 builder.Services.AddDbContext<AppDbContext>(options =>
